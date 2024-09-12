@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/github/LiusCraft/spider-network/graph/badge.svg?token=YUIBG36UDY)](https://codecov.io/github/LiusCraft/spider-network)
+
 # spider-network
 Multi-area networking, form your own private networking domain
 
