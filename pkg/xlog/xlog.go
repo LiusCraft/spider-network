@@ -1,9 +1,11 @@
 package xlog
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 var (
@@ -34,13 +36,35 @@ type Logger interface {
 	Fatal(v ...interface{})
 }
 
+func (l *logger) Deadline() (deadline time.Time, ok bool) {
+	return l.ctx.Deadline()
+}
+
+func (l *logger) Done() <-chan struct{} {
+	return l.ctx.Done()
+}
+
+func (l *logger) Err() error {
+	return l.ctx.Err()
+}
+
+func (l *logger) Value(key any) any {
+	return l.ctx.Value(key)
+}
+
 type logger struct {
 	std *log.Logger
+	ctx context.Context
 }
 
 func NewLogger() Logger {
+	return NewLoggerWithCtx(context.Background())
+}
+
+func NewLoggerWithCtx(ctx context.Context) Logger {
 	return &logger{
 		std: defaultLog,
+		ctx: ctx,
 	}
 }
 
