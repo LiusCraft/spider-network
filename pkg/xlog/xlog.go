@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"time"
+
+	"github.com/liuscraft/spider-network/pkg/utils"
 )
 
 var (
@@ -52,20 +54,45 @@ func (l *logger) Value(key any) any {
 	return l.ctx.Value(key)
 }
 
+func genLogId() string {
+	return utils.RandString(10)
+}
+
 type logger struct {
-	std *log.Logger
-	ctx context.Context
+	std   *log.Logger
+	ctx   context.Context
+	logId string
 }
 
 func NewLogger() Logger {
-	return NewLoggerWithCtx(context.Background())
+	return &logger{
+		std:   defaultLog,
+		logId: genLogId(),
+		ctx:   context.TODO(),
+	}
 }
 
-func NewLoggerWithCtx(ctx context.Context) Logger {
+func LoggerWithLogId(logId string) Logger {
 	return &logger{
-		std: defaultLog,
-		ctx: ctx,
+		std:   defaultLog,
+		logId: logId,
+		ctx:   context.TODO(),
 	}
+}
+
+func LoggerWithCtx(xl Logger, ctx context.Context) Logger {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	l, ok := xl.(*logger)
+	if !ok {
+		l = &logger{
+			std:   defaultLog,
+			logId: genLogId(),
+		}
+	}
+	l.ctx = ctx
+	return l
 }
 
 func (l *logger) send(level Level, v ...interface{}) {
