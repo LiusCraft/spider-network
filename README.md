@@ -1,3 +1,4 @@
+[![Project tests and coverage](https://github.com/LiusCraft/spider-network/actions/workflows/coverage.yml/badge.svg)](https://github.com/LiusCraft/spider-network/actions/workflows/coverage.yml)
 [![codecov](https://codecov.io/github/LiusCraft/spider-network/graph/badge.svg?token=YUIBG36UDY)](https://codecov.io/github/LiusCraft/spider-network)
 
 # spider-network
