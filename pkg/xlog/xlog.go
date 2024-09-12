@@ -64,6 +64,14 @@ type logger struct {
 	logId string
 }
 
+func tiggerLogger(xl Logger) *logger {
+	l, ok := xl.(*logger)
+	if !ok {
+		return NewLogger().(*logger)
+	}
+	return l
+}
+
 func NewLogger() Logger {
 	return &logger{
 		std:   defaultLog,
@@ -72,15 +80,18 @@ func NewLogger() Logger {
 	}
 }
 
-func LoggerWithLogId(logId string) Logger {
-	return &logger{
-		std:   defaultLog,
-		logId: logId,
-		ctx:   context.TODO(),
+func WithLogId(xl Logger, logId string) Logger {
+	if logId == "" {
+		logId = genLogId()
 	}
+	l := tiggerLogger(xl)
+	if logId != "" {
+		l.logId = logId
+	}
+	return l
 }
 
-func LoggerWithCtx(xl Logger, ctx context.Context) Logger {
+func WithCtx(xl Logger, ctx context.Context) Logger {
 	if ctx == nil {
 		ctx = context.Background()
 	}
