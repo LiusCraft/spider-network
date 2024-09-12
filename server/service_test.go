@@ -7,6 +7,11 @@ import (
 )
 
 func TestService(t *testing.T) {
-	srv := NewService(&config.ServerConfig{BindAddr: ":8080"})
-	srv.listener.Close() // TODO: test
+	t.Run("Create Service", func(t *testing.T) {
+		srv, err := NewService(&config.ServerConfig{BindAddr: ":8080"})
+		if err != nil {
+			t.Error(err)
+		}
+		srv.listener.Close() // TODO: test
+	})
 }
