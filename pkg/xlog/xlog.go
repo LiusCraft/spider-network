@@ -3,6 +3,7 @@ package xlog
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -36,6 +37,7 @@ type Logger interface {
 	Warn(v ...interface{})
 	Error(v ...interface{})
 	Fatal(v ...interface{})
+	SetOutput(v ...io.Writer)
 }
 
 func (l *logger) Deadline() (deadline time.Time, ok bool) {
@@ -55,7 +57,7 @@ func (l *logger) Value(key any) any {
 }
 
 func genLogId() string {
-	return utils.RandString(10)
+	return utils.RandString(15)
 }
 
 type logger struct {
@@ -73,17 +75,18 @@ func tiggerLogger(xl Logger) *logger {
 }
 
 func NewLogger() Logger {
-	return &logger{
-		std:   defaultLog,
-		logId: genLogId(),
-		ctx:   context.TODO(),
+	l := &logger{
+		std: defaultLog,
+		ctx: context.TODO(),
 	}
+	return WithLogId(l, "")
 }
 
 func WithLogId(xl Logger, logId string) Logger {
 	if logId == "" {
 		logId = genLogId()
 	}
+	logId = fmt.Sprintf("[%s]", logId)
 	l := tiggerLogger(xl)
 	if logId != "" {
 		l.logId = logId
@@ -95,23 +98,22 @@ func WithCtx(xl Logger, ctx context.Context) Logger {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	l, ok := xl.(*logger)
-	if !ok {
-		l = &logger{
-			std:   defaultLog,
-			logId: genLogId(),
-		}
-	}
+	l := tiggerLogger(xl)
 	l.ctx = ctx
 	return l
+}
+
+func (l *logger) SetOutput(ws ...io.Writer) {
+	ws = append([]io.Writer{os.Stdout}, ws...)
+	l.std.SetOutput(io.MultiWriter(ws...))
 }
 
 func (l *logger) send(level Level, v ...interface{}) {
 	switch level {
 	case LevelFatal:
-		l.std.Fatalf("[%s] %s", level.String(), fmt.Sprint(v...))
+		l.std.Fatalf("%s [%s] %s", l.logId, level.String(), fmt.Sprint(v...))
 	default:
-		l.std.Printf("[%s] %s", level.String(), fmt.Sprint(v...))
+		l.std.Printf("%s [%s] %s", l.logId, level.String(), fmt.Sprint(v...))
 	}
 }
 
