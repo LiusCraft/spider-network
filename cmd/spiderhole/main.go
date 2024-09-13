@@ -11,7 +11,7 @@ import (
 func main() {
 	xl := xlog.NewLogger()
 	serverConfig := &config.ServerConfig{}
-	err := config.LoadFile(serverConfig, "server.conf")
+	err := config.LoadFile(serverConfig, "conf/server.conf")
 	if err != nil {
 		xl.Fatalf("load config error: %v", err)
 	}

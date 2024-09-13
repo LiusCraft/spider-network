@@ -1,9 +1,12 @@
 package server
 
 import (
+	"fmt"
+	"io"
 	"net"
 
 	"github.com/liuscraft/spider-network/pkg/config"
+	"github.com/liuscraft/spider-network/pkg/protocol"
 	"github.com/liuscraft/spider-network/pkg/xlog"
 )
 
@@ -49,6 +52,18 @@ func (s *Service) Run() error {
 }
 
 func (s *Service) handleConn(conn net.Conn) {
+	xl := xlog.WithLogId(xlog.NewLogger(), fmt.Sprintf("spider-hole-conn[%s]", conn.RemoteAddr().String()))
 	defer conn.Close()
-	// TODO: handle connection
+	for {
+		packet, err := protocol.ReceivePacket(conn)
+		if err != nil {
+			if err == io.EOF {
+				xl.Warnf("spider-hole-conn leave connection")
+				break
+			}
+			xl.Errorf("read packet error: %v", err)
+			return
+		}
+		xl.Infof("received packet: %+v", packet)
+	}
 }
