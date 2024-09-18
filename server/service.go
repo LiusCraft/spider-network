@@ -65,5 +65,12 @@ func (s *Service) handleConn(conn net.Conn) {
 			return
 		}
 		xl.Infof("received packet: %+v", packet)
+		if packet.PacketType() == protocol.JsonType {
+			_, err2 := protocol.WritePacket(conn, packet)
+			if err2 != nil {
+				xl.Errorf("write response packet error: %v", err2)
+				return
+			}
+		}
 	}
 }

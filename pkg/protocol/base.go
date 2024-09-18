@@ -1,38 +1,48 @@
 package protocol
 
-import (
-	"encoding/binary"
-	"io"
-)
-
 const BytesType PacketType = 0
 
 type bytesProtocol struct {
 	packetSize int    // packet real size
 	body       []byte // packet data
+	dataType   PacketType
 }
 
-func newBytesProtocol(len int) *bytesProtocol {
-	body := make([]byte, 5)
-	body[0] = BytesType
-	binary.BigEndian.PutUint32(body, uint32(len))
+func newBytesProtocol(dataType PacketType) *bytesProtocol {
 	return &bytesProtocol{
-		packetSize: len,
-		body:       body,
+		packetSize: 0,
+		dataType:   dataType,
+		body:       make([]byte, 0),
 	}
 }
 
-func (b *bytesProtocol) Write(p []byte) (n int, err error) {
-	if b.packetSize == 0 {
-		return 0, io.EOF
+func (b *bytesProtocol) Write(p interface{}) (n int, err error) {
+	bytes, ok := p.([]byte)
+	if !ok {
+		return 0, err
 	}
-	b.body = append(b.body, p...)
-	return b.packetSize, nil
+	b.packetSize += len(bytes)
+	b.body = append(b.body, bytes...)
+	return len(bytes), nil
 }
 
-func (b *bytesProtocol) Read(p []byte) (n int, err error) {
-	p = append(p, b.body...)
-	return b.packetSize, nil
+func (b *bytesProtocol) Read(p interface{}) (n int, err error) {
+	o, ok := p.(Packet)
+	if !ok {
+		return 0, ErrToPacketTypeNotImplemented
+	}
+	return o.ToPacket(b.body)
+}
+
+func (b *bytesProtocol) ToPacket(p []byte) (n int, err error) {
+	b.body = p
+	b.packetSize = len(b.body)
+	return b.PacketSize(), nil
+}
+
+// protocol to []byte
+func (b *bytesProtocol) Bytes() []byte {
+	return b.body
 }
 
 func (b *bytesProtocol) PacketSize() int {
@@ -40,17 +50,18 @@ func (b *bytesProtocol) PacketSize() int {
 }
 
 func (b *bytesProtocol) PacketType() PacketType {
-	return BytesType
+	return b.dataType
 }
 
-func (b *bytesProtocol) Writer(w io.Writer) (n int, err error) {
-	return w.Write(b.body)
-}
-
-func (b *bytesProtocol) NewProtocol(size int) Protocol {
-	return newBytesProtocol(size)
+func (b *bytesProtocol) NewProtocol() Packet {
+	return newBytesProtocol(b.dataType)
 }
 
 func (b *bytesProtocol) String() string {
 	return string(b.body)
+}
+
+func (b *bytesProtocol) Clear() {
+	b.packetSize = 0
+	b.body = make([]byte, 0)
 }

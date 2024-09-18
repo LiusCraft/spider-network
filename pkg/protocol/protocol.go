@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+
+	"github.com/liuscraft/spider-network/pkg/xlog"
 )
 
 const (
@@ -15,27 +17,51 @@ const (
 type PacketType = byte
 
 var (
-	protocols = map[PacketType]Creator{}
+	defaultPacketType = BytesType
+	protocols         = map[PacketType]Creator{}
 )
 
-type Protocol interface {
-	Read(p []byte) (n int, err error)
-	Write(p []byte) (n int, err error)
+type Packet interface {
+	/* Read write to target packet
+	example:
+		bytesPacket to stringPacket(target packet)
+		src := &bytesPacket{}
+	    src.Write([]byte("hello world"))
+		targetPacket := &stringPacket{}
+		src.Read(targetPacket)
+		result := ""
+		targetPacket.Read(result)
+		fmt.Println(result) => "hello world"
+	*/
+	Read(p interface{}) (n int, err error)
+	/* Write to the packet
+	example:
+		bytePacket := &bytePacket{}
+	    bytePacket.Write([]byte("hello world")) // The internal implementation deals with data of type []byte
+		stringPacket := &stringPacket{}
+	    stringPacket.Write("hello world") // The internal implementation deals with data of type string
+	*/
+	Write(p interface{}) (n int, err error)
+	// ToPacket Writes bytes to change the current packet content
+	ToPacket(p []byte) (n int, err error)
+	// Bytes get the packet to bytes
+	Bytes() []byte
+	// PacketSize get the packet size
 	PacketSize() int
 	// PacketType default is BytesPacket, also zero
 	PacketType() PacketType
-	Writer(writer io.Writer) (n int, err error)
+	Clear()
 }
 
 type Creator interface {
-	NewProtocol(packetSize int) Protocol
+	NewProtocol() Packet
 }
 
 func init() {
-	_ = RegisterProtocol(&bytesProtocol{})
+	_ = RegisterProtocol(newBytesProtocol(BytesType))
 }
 
-func RegisterProtocol(protocol Protocol) error {
+func RegisterProtocol(protocol Packet) error {
 	// register protocol
 	_, ok := protocols[protocol.PacketType()]
 	if ok {
@@ -49,15 +75,20 @@ func RegisterProtocol(protocol Protocol) error {
 	return nil
 }
 
-func CreateProtocol(packetType PacketType, size int) (Protocol, error) {
+func CreateProtocol(packetType PacketType) (Packet, error) {
 	creator, ok := protocols[packetType]
 	if !ok {
 		return nil, fmt.Errorf("create protocol failed, not registered")
 	}
-	return creator.NewProtocol(size), nil
+	return creator.NewProtocol(), nil
 }
 
-func ReceivePacket(reader io.Reader) (Protocol, error) {
+func SupportProtocol(packetType PacketType) bool {
+	_, ok := protocols[packetType]
+	return ok
+}
+
+func ReceivePacket(reader io.Reader) (Packet, error) {
 	// read packet header
 	header := make([]byte, packetHeadLen)
 	if _, err := reader.Read(header); err != nil {
@@ -66,15 +97,15 @@ func ReceivePacket(reader io.Reader) (Protocol, error) {
 		}
 		return nil, fmt.Errorf("read packet header failed, err: %v", err)
 	}
-	tag := header[1]
+	tag := header[0]
 	// create protocol
 	creator, ok := protocols[tag]
 	if !ok {
-		return nil, fmt.Errorf("create protocol failed")
+		creator = &bytesProtocol{dataType: tag, body: make([]byte, 0), packetSize: 0}
 	}
 	// read packet size
 	size := binary.BigEndian.Uint32(header[1:])
-	protocol := creator.NewProtocol(int(size))
+	protocol := creator.NewProtocol()
 	// read packet body
 	body := make([]byte, size)
 	if _, err := reader.Read(body); err != nil {
@@ -85,4 +116,36 @@ func ReceivePacket(reader io.Reader) (Protocol, error) {
 		return nil, fmt.Errorf("write protocol packet failed, err: %v", err)
 	}
 	return protocol, nil
+}
+
+func WritePacket(writer io.Writer, packet Packet, autoClear ...bool) (n int, err error) {
+	xl := xlog.WithLogId(xlog.NewLogger(), "writePacket")
+	sendPacket := packet
+	support := SupportProtocol(packet.PacketType())
+	if !support {
+		sendPacket = &bytesProtocol{dataType: packet.PacketType(), body: packet.Bytes(), packetSize: packet.PacketSize()}
+		xl.Debugf("useByteProtocol: %v", CombingPacket(sendPacket))
+	}
+	n, err = writer.Write(CombingPacket(sendPacket))
+	if err != nil {
+		return 0, err
+	}
+	if len(autoClear) > 0 && autoClear[0] {
+		packet.Clear()
+	}
+	return
+}
+
+func Int32ToBytes(n uint32) []byte {
+	buf := make([]byte, 4) // int32 占 4 个字节
+	binary.BigEndian.PutUint32(buf, n)
+	return buf
+}
+
+func CombingPacket(b Packet) []byte {
+	out := make([]byte, 0, b.PacketSize()+5)
+	out = append(out, b.PacketType())
+	out = append(out, Int32ToBytes(uint32(b.PacketSize()))...)
+	out = append(out, b.Bytes()...)
+	return out
 }
