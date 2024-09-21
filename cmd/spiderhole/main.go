@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	xl := xlog.NewLogger()
+	xl := xlog.New()
 	serverConfig := &config.ServerConfig{}
 	err := config.LoadFile(serverConfig, "conf/server.conf")
 	if err != nil {

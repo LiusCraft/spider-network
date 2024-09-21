@@ -1,14 +1,17 @@
-package protocol
+package bytes
 
-const BytesType PacketType = 0
+import (
+	"github.com/liuscraft/spider-network/pkg/errors"
+	"github.com/liuscraft/spider-network/pkg/protocol"
+)
 
 type bytesProtocol struct {
 	packetSize int    // packet real size
 	body       []byte // packet data
-	dataType   PacketType
+	dataType   protocol.PacketType
 }
 
-func newBytesProtocol(dataType PacketType) *bytesProtocol {
+func newBytesProtocol(dataType protocol.PacketType) *bytesProtocol {
 	return &bytesProtocol{
 		packetSize: 0,
 		dataType:   dataType,
@@ -27,9 +30,9 @@ func (b *bytesProtocol) Write(p interface{}) (n int, err error) {
 }
 
 func (b *bytesProtocol) Read(p interface{}) (n int, err error) {
-	o, ok := p.(Packet)
+	o, ok := p.(protocol.Packet)
 	if !ok {
-		return 0, ErrToPacketTypeNotImplemented
+		return 0, errors.ErrToPacketTypeNotImplemented
 	}
 	return o.ToPacket(b.body)
 }
@@ -49,12 +52,8 @@ func (b *bytesProtocol) PacketSize() int {
 	return b.packetSize
 }
 
-func (b *bytesProtocol) PacketType() PacketType {
+func (b *bytesProtocol) PacketType() protocol.PacketType {
 	return b.dataType
-}
-
-func (b *bytesProtocol) NewProtocol() Packet {
-	return newBytesProtocol(b.dataType)
 }
 
 func (b *bytesProtocol) String() string {

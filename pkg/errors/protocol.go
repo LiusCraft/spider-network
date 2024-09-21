@@ -1,4 +1,4 @@
-package protocol
+package errors
 
 import (
 	"errors"

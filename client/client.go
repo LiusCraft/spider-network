@@ -5,6 +5,8 @@ import (
 
 	"github.com/liuscraft/spider-network/pkg/model"
 	"github.com/liuscraft/spider-network/pkg/protocol"
+	"github.com/liuscraft/spider-network/pkg/protocol/packet"
+	"github.com/liuscraft/spider-network/pkg/protocol/packet_io"
 	"github.com/liuscraft/spider-network/pkg/xlog"
 )
 
@@ -13,7 +15,7 @@ type Client struct {
 
 func NewClient() *Client {
 	// tcp connection
-	xl := xlog.NewLogger()
+	xl := xlog.New()
 	conn, err := net.Dial("tcp", ":19730")
 	if err != nil {
 		xl.Error("Error connecting to server:", err)
@@ -22,41 +24,40 @@ func NewClient() *Client {
 	defer conn.Close()
 
 	body := "test"
-	packet, err := protocol.CreateProtocol(protocol.BytesType)
+	bytesPacket, err := packet.CreateProtocol(protocol.BytesType)
 	if err != nil {
 		xl.Errorf("Error creating protocol, error: %v", err)
 		return nil
 	}
-	_, err = packet.Write([]byte(body))
+	_, err = bytesPacket.Write([]byte(body))
 	if err != nil {
 		xl.Errorf("Error writing to server, error: %v", err)
 		return nil
 	}
-	protocol.WritePacket(conn, packet, true)
-	_, err = packet.Write([]byte("test"))
+	packet_io.WritePacket(conn, bytesPacket, true)
+	_, err = bytesPacket.Write([]byte("test"))
 	if err != nil {
 		xl.Errorf("Error writing to server, error: %v", err)
 		return nil
 	}
-	protocol.WritePacket(conn, packet)
-	jsonProtocol := protocol.NewJsonProtocol()
+	packet_io.WritePacket(conn, bytesPacket)
+	jsonProtocol, _ := packet.CreateProtocol(protocol.JsonType)
 	jsonProtocol.Write(model.UserModel{ID: 22, Username: "小明"})
-	_, err = protocol.WritePacket(conn, jsonProtocol)
+	_, err = packet_io.WritePacket(conn, jsonProtocol)
 	if err != nil {
 		xl.Errorf("Error writing to server, error: %v", err)
 		return nil
 	}
-	receivePacket, err := protocol.ReceivePacket(conn)
+	receivePacket, err := packet_io.ReceivePacket(conn)
 	if err != nil {
-		xl.Errorf("Error receiving packet, error: %v", err)
+		xl.Errorf("Error receiving bytesPacket, error: %v", err)
 		return nil
 	}
 	if receivePacket.PacketType() == protocol.JsonType {
-		receiveJson := protocol.NewJsonProtocol()
-		receiveJson.ToPacket(receivePacket.Bytes())
+		jsonProtocol.ToPacket(receivePacket.Bytes())
 		result := &model.UserModel{}
-		receiveJson.Read(result)
-		xl.Infof("receive packet: %+v", result)
+		jsonProtocol.Read(result)
+		xl.Infof("receive bytesPacket: %+v", result)
 	}
 
 	return &Client{}
