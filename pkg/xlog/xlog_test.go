@@ -17,7 +17,7 @@ func (w *mockW) Write(p []byte) (n int, err error) {
 }
 
 func TestPrintLog(t *testing.T) {
-	xl := NewLogger()
+	xl := New()
 	xl.SetOutput(&mockW{t})
 	xl.Debugf("test %s", "debug")
 	xl.Infof("test %s", "info")
@@ -30,7 +30,7 @@ func TestPrintLog(t *testing.T) {
 }
 
 func TestConcurrency(t *testing.T) {
-	xl := NewLogger()
+	xl := New()
 	g := &sync.WaitGroup{}
 	for i := 0; i < 100; i++ {
 		g.Add(1)
@@ -47,7 +47,7 @@ func TestConcurrency(t *testing.T) {
 
 func TestLogger(t *testing.T) {
 	t.Run("WithLogger", func(t *testing.T) {
-		xl := NewLogger()
+		xl := New()
 		xl.Debug("test")
 		xl = WithCtx(nil, nil)
 		xl.Debug("test")
@@ -56,7 +56,7 @@ func TestLogger(t *testing.T) {
 	})
 
 	t.Run("LoggerContext", func(t *testing.T) {
-		xl := WithCtx(NewLogger(), context.WithValue(context.Background(), "test", "context"))
+		xl := WithCtx(New(), context.WithValue(context.Background(), "test", "context"))
 		xlCtx := xl.(context.Context)
 		if xlCtx.Value("test") != "context" {
 			t.Error("context value not match")

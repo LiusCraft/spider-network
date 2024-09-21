@@ -6,13 +6,13 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 
 	"github.com/liuscraft/spider-network/pkg/utils"
 )
 
 var (
-	defaultLog = log.New(os.Stdout, "", log.LstdFlags)
+	defaultLog    = log.New(os.Stdout, "", log.LstdFlags)
+	defaultLogger = New()
 )
 
 // xlog is a simple logger.
@@ -40,22 +40,6 @@ type Logger interface {
 	SetOutput(v ...io.Writer)
 }
 
-func (l *logger) Deadline() (deadline time.Time, ok bool) {
-	return l.ctx.Deadline()
-}
-
-func (l *logger) Done() <-chan struct{} {
-	return l.ctx.Done()
-}
-
-func (l *logger) Err() error {
-	return l.ctx.Err()
-}
-
-func (l *logger) Value(key any) any {
-	return l.ctx.Value(key)
-}
-
 func genLogId() string {
 	return utils.RandString(15)
 }
@@ -66,15 +50,15 @@ type logger struct {
 	logId string
 }
 
-func tiggerLogger(xl Logger) *logger {
+func convertLogger(xl Logger) *logger {
 	l, ok := xl.(*logger)
 	if !ok {
-		return NewLogger().(*logger)
+		return New().(*logger)
 	}
 	return l
 }
 
-func NewLogger() Logger {
+func New() Logger {
 	l := &logger{
 		std: defaultLog,
 		ctx: context.TODO(),
@@ -82,24 +66,19 @@ func NewLogger() Logger {
 	return WithLogId(l, "")
 }
 
+func NewWithLogId(logId string) Logger {
+	return WithLogId(New(), logId)
+}
+
 func WithLogId(xl Logger, logId string) Logger {
 	if logId == "" {
 		logId = genLogId()
 	}
 	logId = fmt.Sprintf("[%s]", logId)
-	l := tiggerLogger(xl)
+	l := convertLogger(xl)
 	if logId != "" {
 		l.logId = logId
 	}
-	return l
-}
-
-func WithCtx(xl Logger, ctx context.Context) Logger {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	l := tiggerLogger(xl)
-	l.ctx = ctx
 	return l
 }
 
