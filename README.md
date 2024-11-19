@@ -17,3 +17,6 @@ This project is a multi-area networking project, which is a private networking d
 - Support for multiple users
 - Support for multiple applications
 - Support for multiple services
+
+## TODO
+1. 实现服务端的客户端管理能力
