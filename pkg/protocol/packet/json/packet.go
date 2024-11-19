@@ -16,10 +16,18 @@ func (j *JsonProtocol) Read(p interface{}) (n int, err error) {
 }
 
 func (j *JsonProtocol) Write(p interface{}) (n int, err error) {
+	// check, if p is []byte, then just copy it
 	bytes, ok := p.([]byte)
 	if !ok {
+		// if p is not []byte, then marshal it
 		bytes, err = json.Marshal(p)
 		if err != nil {
+			return 0, err
+		}
+	} else {
+		// 验证是否为有效的JSON格式
+		var js interface{}
+		if err := json.Unmarshal(bytes, &js); err != nil {
 			return 0, err
 		}
 	}

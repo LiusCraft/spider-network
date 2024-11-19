@@ -22,7 +22,7 @@ func newBytesProtocol(dataType protocol.PacketType) *bytesProtocol {
 func (b *bytesProtocol) Write(p interface{}) (n int, err error) {
 	bytes, ok := p.([]byte)
 	if !ok {
-		return 0, err
+		return 0, errors.ErrCannotConvertType
 	}
 	b.packetSize += len(bytes)
 	b.body = append(b.body, bytes...)
