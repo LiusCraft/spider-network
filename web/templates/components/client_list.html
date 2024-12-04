@@ -1,0 +1,85 @@
+{{define "client_list"}}
+<div id="refresh-indicator" class="htmx-indicator">
+    <small class="text-muted">刷新中...</small>
+</div>
+<div class="table-responsive" 
+     hx-get="/api/clients" 
+     hx-trigger="every 1s"
+     hx-swap="innerHTML"
+     hx-indicator="#refresh-indicator">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>名称</th>
+                <th>公网地址</th>
+                <th>状态</th>
+                <th>连接节点</th>
+                <th>延迟</th>
+                <th>流量统计</th>
+                <th>P2P流量统计</th>
+                <th>最后在线</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Clients}}
+            <tr>
+                <td>{{.ClientID}}</td>
+                <td>{{.Name}}</td>
+                <td>{{.PublicAddr}}</td>
+                <td>
+                    <span class="badge {{if .Status.Connected}}bg-success{{else}}bg-danger{{end}} status-badge">
+                        {{if .Status.Connected}}在线{{else}}离线{{end}}
+                    </span>
+                </td>
+                <td>
+                    {{range .Status.Peers}}
+                    <span class="badge bg-info">{{.}}</span>
+                    {{end}}
+                </td>
+                <td>
+                    {{if .Status.Connected}}
+                        {{if gt .Status.Latency 0}}
+                            {{.Status.Latency}}ms
+                        {{else}}
+                            -
+                        {{end}}
+                    {{else}}
+                        -
+                    {{end}}
+                </td>
+                <!-- 流量统计 -->
+                <td class="text-center">
+                    {{if .Status.Connected}}
+                        <small>
+                            ↑{{formatBytes .Status.BytesSent}}<br>
+                            ↓{{formatBytes .Status.BytesRecv}}
+                        </small>
+                    {{else}}
+                        -
+                    {{end}}
+                </td>
+                <!-- P2P流量统计 -->
+                <td class="text-center">
+                    <!-- P2P上行流量 (MB) -->
+                    ↑{{formatBytes .Status.P2PBytesSent}}<br>
+                    <!-- P2P下行流量 (MB) -->
+                    ↓{{formatBytes .Status.P2PBytesRecv}}<br>
+                </td>
+                <td>{{.Status.LastSeen.Format "2006-01-02 15:04:05"}}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary"
+                            hx-get="/api/clients/detail?id={{.ClientID}}"
+                            hx-target="#clientDetail"
+                            data-bs-toggle="modal"
+                            data-bs-target="#clientDetailModal">
+                        详情
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

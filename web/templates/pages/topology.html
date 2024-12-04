@@ -1,0 +1,17 @@
+{{define "content-topology"}}
+<div class="row">
+    <div class="col-12">
+        <h2>网络拓扑</h2>
+        <div class="card">
+            <div class="card-body">
+                <div id="topology-container"
+                     hx-get="/api/topology"
+                     hx-trigger="load, every 10s"
+                     hx-swap="none">
+                    <div id="topology-graph"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

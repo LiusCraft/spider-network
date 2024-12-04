@@ -7,7 +7,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/spiderhole",
-            "cwd": "${workspaceFolder}/conf/",
+            "cwd": "${workspaceFolder}",
         },
         {
             "name": "Spider-client",

@@ -14,39 +14,34 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
+	"time"
+
+	"bufio"
 
 	"github.com/liuscraft/spider-network/pkg/config"
 	"github.com/liuscraft/spider-network/pkg/protocol"
 	"github.com/liuscraft/spider-network/pkg/protocol/hole"
 	"github.com/liuscraft/spider-network/pkg/xlog"
+	"github.com/liuscraft/spider-network/server/client_mgr"
+	"github.com/liuscraft/spider-network/server/types"
 )
 
 type HoleHandler struct {
-	config   config.HoleConfig
-	listener net.Listener
-	clients  sync.Map // 存储已连接的客户端信息
-}
-
-type clientInfo struct {
-	conn       net.Conn
-	clientID   string
-	name       string
-	publicAddr string
+	config    config.HoleConfig
+	listener  net.Listener
+	clientMgr *client_mgr.ClientManager
 }
 
 func NewHoleHandler(config config.HoleConfig) (h *HoleHandler, err error) {
-	xl := xlog.New()
-	xl.Info("spider-hole service starting...")
-	xl.Infof("spider-hole service listening on %s", config.BindAddr)
 	listener, err := net.Listen("tcp", config.BindAddr)
 	if err != nil {
-		xl.Errorf("spider-hole service listen error: %v", err)
 		return nil, err
 	}
+
 	return &HoleHandler{
-		listener: listener,
-		config:   config,
+		config:    config,
+		listener:  listener,
+		clientMgr: client_mgr.NewClientManager(),
 	}, nil
 }
 
@@ -67,128 +62,244 @@ func (h *HoleHandler) acceptSpiderConn(xl xlog.Logger, conn net.Conn) {
 	xl.Infof("spider-hole service accept connection from %s", conn.RemoteAddr())
 	xl = xlog.WithLogId(xl, fmt.Sprintf("spider-hole-conn[%s]", conn.RemoteAddr().String()))
 
-	packetIO := protocol.NewPacketIO(conn, conn)
-
 	defer func() {
 		conn.Close()
 		// 清理客户端信息
-		h.clients.Range(func(key, value interface{}) bool {
-			if info, ok := value.(*clientInfo); ok && info.conn == conn {
-				h.clients.Delete(key)
-				return false
-			}
-			return true
-		})
+		h.clientMgr.HandleDisconnect(conn)
 	}()
 
+	reader := bufio.NewReader(conn)
 	for {
-		packet, err := packetIO.ReadPacket()
+		// 读取消息
+		data, err := reader.ReadBytes('\n')
 		if err != nil {
-			if err == io.EOF {
-				xl.Warnf("spider-hole-conn leave connection")
-				break
+			if err != io.EOF {
+				xl.Errorf("read error: %v", err)
 			}
-			xl.Errorf("read packet error: %v", err)
 			return
 		}
 
+		// 解析消息
 		var msg hole.Message
-		if _, err := packet.Read(&msg); err != nil {
-			xl.Errorf("parse hole message error: %v", err)
+		if err := json.Unmarshal(data, &msg); err != nil {
+			xl.Errorf("unmarshal error: %v", err)
 			continue
 		}
 
+		// 处理消息
 		switch msg.Type {
 		case hole.TypeRegister:
-			h.handleRegister(xl, conn, &msg)
+			if err := h.handleRegister(xl, conn, &msg); err != nil {
+				xl.Errorf("handle register error: %v", err)
+				return
+			}
 		case hole.TypePunch:
-			h.handlePunch(xl, conn, &msg)
+			if err := h.handlePunch(xl, &msg); err != nil {
+				xl.Errorf("handle punch error: %v", err)
+				continue
+			}
 		case hole.TypeConnect:
-			h.handleConnect(xl, conn, &msg)
+			if err := h.handleConnect(xl, &msg); err != nil {
+				xl.Errorf("handle connect error: %v", err)
+				continue
+			}
+		case hole.TypeHeartbeat:
+			if err := h.handleHeartbeat(xl, &msg); err != nil {
+				xl.Errorf("handle heartbeat error: %v", err)
+				continue
+			}
 		default:
 			xl.Warnf("unknown message type: %s", msg.Type)
 		}
 	}
 }
 
-func (h *HoleHandler) handleRegister(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
+func (h *HoleHandler) handleRegister(xl xlog.Logger, conn net.Conn, msg *hole.Message) error {
 	var payload hole.RegisterPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-		xl.Errorf("parse register payload error: %v", err)
-		return
+		return fmt.Errorf("unmarshal register payload error: %v", err)
 	}
 
-	info := &clientInfo{
-		conn:       conn,
-		clientID:   payload.ClientID,
-		name:       payload.Name,
-		publicAddr: conn.RemoteAddr().String(),
+	// 检查是否是重连
+	if oldClient, exists := h.clientMgr.GetClient(payload.ClientID); exists {
+		// 如果是重连，关闭旧连接
+		if oldClient.Conn != nil {
+			oldClient.Conn.Close()
+		}
+		xl.Infof("Client %s (%s) reconnected from %s", payload.ClientID, payload.Name, conn.RemoteAddr())
+	} else {
+		xl.Infof("New client %s (%s) registered from %s", payload.ClientID, payload.Name, conn.RemoteAddr())
 	}
-	h.clients.Store(payload.ClientID, info)
-	xl.Infof("client registered: %+v", info)
 
-	// 发送注册成功响应
+	// 创建或更新客户端信息
+	client := types.NewClientInfo(conn, payload.ClientID, payload.Name)
+	h.clientMgr.AddClient(client)
+
+	// 发送注册确认
 	response := &hole.Message{
 		Type: hole.TypeRegister,
 		From: "server",
 		To:   payload.ClientID,
 	}
-	packet, err := hole.CreateHolePacket(response)
+	data, err := json.Marshal(response)
 	if err != nil {
-		xl.Errorf("create response packet error: %v", err)
-		return
+		return fmt.Errorf("marshal register response error: %v", err)
 	}
 
-	if err := protocol.NewPacketIO(nil, conn).WritePacket(packet); err != nil {
-		xl.Errorf("write response error: %v", err)
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("write register response error: %v", err)
 	}
+
+	return nil
 }
 
-func (h *HoleHandler) handlePunch(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
+func (h *HoleHandler) handlePunch(xl xlog.Logger, msg *hole.Message) error {
 	var payload hole.PunchPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		xl.Errorf("parse punch payload error: %v", err)
-		return
+		return err
 	}
 
 	// 查找目标客户端
-	targetValue, ok := h.clients.Load(msg.To)
+	target, ok := h.clientMgr.GetClient(msg.To)
 	if !ok {
 		xl.Warnf("target client not found: %s", msg.To)
-		return
+		return nil
 	}
-	target := targetValue.(*clientInfo)
 
-	// 向目标客户端发送打洞消息
+	// 向目标客户端转发打洞消息
 	punchMsg := &hole.Message{
-		Type: hole.TypePunchReady,
-		From: msg.From,
-		To:   msg.To,
-		Payload: json.RawMessage(`{
-			"public_addr": "` + payload.PublicAddr + `",
-			"private_addr": "` + payload.PrivateAddr + `"
-		}`),
+		Type:    hole.TypePunch,
+		From:    msg.From,
+		To:      msg.To,
+		Payload: msg.Payload,
 	}
-	packet, _ := hole.CreateHolePacket(punchMsg)
-	if err := protocol.NewPacketIO(nil, target.conn).WritePacket(packet); err != nil {
+
+	data, err := json.Marshal(punchMsg)
+	if err != nil {
+		xl.Errorf("marshal punch message error: %v", err)
+		return err
+	}
+
+	if _, err := target.Conn.Write(append(data, '\n')); err != nil {
 		xl.Errorf("write punch message error: %v", err)
+		return err
 	}
+
+	xl.Infof("Forwarded punch message from %s to %s", msg.From, msg.To)
+	return nil
 }
 
-func (h *HoleHandler) handleConnect(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
+func (h *HoleHandler) handleConnect(xl xlog.Logger, msg *hole.Message) error {
 	// 查找目标客户端
-	targetValue, ok := h.clients.Load(msg.To)
+	target, ok := h.clientMgr.GetClient(msg.To)
 	if !ok {
 		xl.Warnf("target client not found: %s", msg.To)
-		return
+		return nil
 	}
-	target := targetValue.(*clientInfo)
 
 	// 转发连接请求
-	packet, _ := hole.CreateHolePacket(msg)
-	if err := protocol.NewPacketIO(nil, target.conn).WritePacket(packet); err != nil {
-		xl.Errorf("write connect message error: %v", err)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		xl.Errorf("marshal connect message error: %v", err)
+		return err
 	}
+
+	if _, err := target.Conn.Write(append(data, '\n')); err != nil {
+		xl.Errorf("write connect message error: %v", err)
+		return err
+	}
+
+	xl.Infof("Forwarded connect message from %s to %s", msg.From, msg.To)
+	return nil
+}
+
+func (h *HoleHandler) handleHeartbeat(xl xlog.Logger, msg *hole.Message) error {
+    // 从消息中获取客户端ID
+    clientID := msg.From
+    if clientID == "" {
+        xl.Error("heartbeat message missing client ID")
+        return nil
+    }
+
+    var heartbeat hole.HeartbeatPayload
+    if err := json.Unmarshal(msg.Payload, &heartbeat); err != nil {
+        xl.Errorf("unmarshal heartbeat data error: %v", err)
+        return nil
+    }
+
+    // 验证客户端ID是否匹配
+    if clientID != heartbeat.ClientID {
+        xl.Errorf("client ID mismatch: message from %s but heartbeat data claims %s", 
+            clientID, heartbeat.ClientID)
+        return nil
+    }
+
+    // 更新客户端状态
+    client, ok := h.clientMgr.GetClient(clientID)
+    if !ok {
+        xl.Warnf("heartbeat from unknown client: %s", clientID)
+        return nil
+    }
+
+    // 计算延迟
+    latency := time.Now().UnixNano() - heartbeat.Timestamp
+    latencyMs := latency / int64(time.Millisecond)
+
+    // 验证并过滤 peers 列表
+    validPeers := make([]string, 0)
+    for _, peerID := range heartbeat.Peers {
+        // 确保 peer 存在且不是自己
+        if peerID != clientID {
+            if _, exists := h.clientMgr.GetClient(peerID); exists {
+                validPeers = append(validPeers, peerID)
+            }
+        }
+    }
+
+    // 计算传输速率
+    now := time.Now()
+    timeSinceLastUpdate := now.Sub(client.Status.LastSeen)
+    var bytesRate float64
+    var p2pBytesRate float64
+    if timeSinceLastUpdate > 0 {
+        // 计算总传输速率
+        totalBytesDelta := (heartbeat.BytesSent + heartbeat.BytesRecv) - 
+            (client.Status.BytesSent + client.Status.BytesRecv)
+        bytesRate = float64(totalBytesDelta) / timeSinceLastUpdate.Seconds()
+
+        // 计算点对点传输速率
+        p2pBytesDelta := (heartbeat.P2PBytesSent + heartbeat.P2PBytesRecv) - 
+            (client.Status.P2PBytesSent + client.Status.P2PBytesRecv)
+        p2pBytesRate = float64(p2pBytesDelta) / timeSinceLastUpdate.Seconds()
+    }
+
+    // 更新客户端状态
+    status := types.ClientStatus{
+        Connected:     true,
+        LastSeen:     now,
+        Peers:        validPeers,
+        BytesSent:    heartbeat.BytesSent,
+        BytesRecv:    heartbeat.BytesRecv,
+        P2PBytesSent: heartbeat.P2PBytesSent,
+        P2PBytesRecv: heartbeat.P2PBytesRecv,
+        BytesRate:    bytesRate,
+        P2PBytesRate: p2pBytesRate,
+        Latency:      latencyMs,
+        ConnectedAt:  client.Status.ConnectedAt,
+        LastError:    client.Status.LastError,
+        LastErrorTime: client.Status.LastErrorTime,
+        PunchStatus:  client.Status.PunchStatus,
+    }
+    h.clientMgr.UpdateClientStatus(clientID, status)
+
+    xl.Debugf("Updated client status: id=%s, latency=%dms, server=%d/%d (%.2f B/s), p2p=%d/%d (%.2f B/s), peers=%v",
+        clientID, latencyMs, 
+        heartbeat.BytesSent, heartbeat.BytesRecv, bytesRate,
+        heartbeat.P2PBytesSent, heartbeat.P2PBytesRecv, p2pBytesRate,
+        validPeers)
+
+    return nil
 }
 
 func (h *HoleHandler) Stop() error {
@@ -209,4 +320,8 @@ func (h *HoleHandler) Send(packet protocol.Packet) error {
 
 func (h *HoleHandler) Receive(packet protocol.Packet) error {
 	panic("TODO: Implement")
+}
+
+func (h *HoleHandler) GetClientManager() *client_mgr.ClientManager {
+	return h.clientMgr
 }

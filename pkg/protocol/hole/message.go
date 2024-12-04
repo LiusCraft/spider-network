@@ -2,6 +2,7 @@ package hole
 
 import (
 	"encoding/json"
+
 	"github.com/liuscraft/spider-network/pkg/protocol"
 )
 
@@ -9,17 +10,19 @@ import (
 type MessageType string
 
 const (
-	TypeRegister    MessageType = "register"     // 注册
-	TypePunchReady  MessageType = "punch_ready"  // 打洞准备
-	TypePunch       MessageType = "punch"        // 打洞请求
-	TypeConnect     MessageType = "connect"      // 连接请求
+	TypeRegister   MessageType = "register"    // 注册
+	TypePunchReady MessageType = "punch_ready" // 打洞准备
+	TypePunch      MessageType = "punch"       // 打洞请求
+	TypeConnect    MessageType = "connect"     // 连接请求
+	TypeHeartbeat  MessageType = "heartbeat"   // 心跳消息
+	TypeMessage    MessageType = "message"     // 消息
 )
 
 // Message 打洞消息
 type Message struct {
 	Type    MessageType     `json:"type"`
-	From    string         `json:"from"`
-	To      string         `json:"to"`
+	From    string          `json:"from"`
+	To      string          `json:"to"`
 	Payload json.RawMessage `json:"payload"`
 }
 
@@ -35,6 +38,17 @@ type RegisterPayload struct {
 type PunchPayload struct {
 	PublicAddr  string `json:"public_addr"`
 	PrivateAddr string `json:"private_addr"`
+}
+
+// HeartbeatPayload 心跳消息负载
+type HeartbeatPayload struct {
+	ClientID     string   `json:"client_id"`  // 客户端ID
+	BytesSent    int64    `json:"bytes_sent"` // 已发送字节数
+	BytesRecv    int64    `json:"bytes_recv"` // 已接收字节数
+	P2PBytesSent int64    `json:"p2p_bytes_sent"`
+	P2PBytesRecv int64    `json:"p2p_bytes_recv"`
+	Peers        []string `json:"peers"`     // 当前连接的节点
+	Timestamp    int64    `json:"timestamp"` // 时间戳
 }
 
 // HolePacket 打洞协议包
@@ -88,4 +102,4 @@ func CreateHolePacket(msg *Message) (protocol.Packet, error) {
 	packet := NewHolePacket()
 	_, err := packet.Write(msg)
 	return packet, err
-} 
+}

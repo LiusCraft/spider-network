@@ -1,0 +1,36 @@
+{{define "client_detail"}}
+<div class="client-detail">
+    <div class="mb-3">
+        <label class="fw-bold">客户端ID:</label>
+        <div>{{.ClientID}}</div>
+    </div>
+    <div class="mb-3">
+        <label class="fw-bold">名称:</label>
+        <div>{{.Name}}</div>
+    </div>
+    <div class="mb-3">
+        <label class="fw-bold">公网地址:</label>
+        <div>{{.PublicAddr}}</div>
+    </div>
+    <div class="mb-3">
+        <label class="fw-bold">状态:</label>
+        <div>
+            <span class="badge {{if .Status.Connected}}bg-success{{else}}bg-danger{{end}}">
+                {{if .Status.Connected}}在线{{else}}离线{{end}}
+            </span>
+        </div>
+    </div>
+    <div class="mb-3">
+        <label class="fw-bold">最后在线:</label>
+        <div>{{.Status.LastSeen.Format "2006-01-02 15:04:05"}}</div>
+    </div>
+    <div class="mb-3">
+        <label class="fw-bold">连接的节点:</label>
+        <div>
+            {{range .Status.Peers}}
+            <span class="badge bg-info">{{.}}</span>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}} 

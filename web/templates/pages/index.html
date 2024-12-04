@@ -1,0 +1,27 @@
+{{define "content-index"}}
+<div class="jumbotron">
+    <h1 class="display-4">SpiderHole 管理后台</h1>
+    <p class="lead">管理您的 P2P 网络连接</p>
+    <hr class="my-4">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">客户端管理</h5>
+                    <p class="card-text">查看和管理所有连接的客户端</p>
+                    <a href="/clients" class="btn btn-primary">查看客户端</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">网络拓扑</h5>
+                    <p class="card-text">查看网络拓扑图</p>
+                    <a href="/topology" class="btn btn-primary">查看拓扑</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,26 @@
+{{ define "content-clients" }}
+<div class="row">
+    <div class="col-12">
+        <h2>客户端管理</h2>
+        <div class="card">
+            <div class="card-body">
+                {{ template "client_list" . }}
+            </div>
+        </div>
+    </div>
+    <!-- 客户端详情模态框 -->
+    <div class="modal fade" id="clientDetailModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">客户端详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="clientDetail">
+                    <!-- 客户端详情将通过 HTMX 加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{ end }}
