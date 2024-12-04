@@ -12,6 +12,6 @@ func TestService(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		srv.listener.Close() // TODO: test
+		defer srv.Close()
 	})
 }
