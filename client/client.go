@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liuscraft/spider-network/pkg/protocol"
 	"github.com/liuscraft/spider-network/pkg/protocol/hole"
-	"github.com/liuscraft/spider-network/pkg/protocol/packet_io"
 	"github.com/liuscraft/spider-network/pkg/xlog"
 )
 
@@ -81,7 +81,7 @@ func (c *Client) acceptPeerConnections() {
 			return
 		}
 		c.xl.Infof("Accepted peer connection from %s", conn.RemoteAddr())
-		
+
 		// 等待对方发送身份信息
 		go func(conn net.Conn) {
 			scanner := bufio.NewScanner(conn)
@@ -91,13 +91,13 @@ func (c *Client) acceptPeerConnections() {
 			}
 			peerID := scanner.Text()
 			c.xl.Infof("Peer identified as: %s", peerID)
-			
+
 			// 发送我们的身份
 			fmt.Fprintf(conn, "%s\n", c.clientID)
-			
+
 			// 存储连接
 			c.peers.Store(peerID, conn)
-			
+
 			// 启动消息处理
 			c.startPeerMessageHandler(peerID, conn)
 		}(conn)
@@ -106,18 +106,18 @@ func (c *Client) acceptPeerConnections() {
 
 func (c *Client) ConnectToPeer(peerID string) error {
 	c.xl.Infof("Initiating connection to peer %s...", peerID)
-	
+
 	// 构造打洞消息
 	payload := hole.PunchPayload{
-		PublicAddr:  c.listener.Addr().String(),  // 使用我们的监听地址
-		PrivateAddr: c.listener.Addr().String(),  // 同上
+		PublicAddr:  c.listener.Addr().String(), // 使用我们的监听地址
+		PrivateAddr: c.listener.Addr().String(), // 同上
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal punch payload failed: %v", err)
 	}
 
-	msg := &hole.HoleMessage{
+	msg := &hole.Message{
 		Type:    hole.TypePunch,
 		From:    c.clientID,
 		To:      peerID,
@@ -129,7 +129,7 @@ func (c *Client) ConnectToPeer(peerID string) error {
 		return fmt.Errorf("create hole packet failed: %v", err)
 	}
 
-	if _, err := packet_io.WritePacket(c.serverConn, packet); err != nil {
+	if err := protocol.NewPacketIO(nil, c.serverConn).WritePacket(packet); err != nil {
 		return fmt.Errorf("send punch message failed: %v", err)
 	}
 
@@ -140,13 +140,13 @@ func (c *Client) ConnectToPeer(peerID string) error {
 func (c *Client) handleServerMessages() {
 	c.xl.Info("Message handler started")
 	for {
-		packet, err := packet_io.ReceivePacket(c.serverConn)
+		packet, err := protocol.NewPacketIO(c.serverConn, nil).ReadPacket()
 		if err != nil {
 			c.xl.Errorf("Failed to receive server message: %v", err)
 			return
 		}
 
-		var msg hole.HoleMessage
+		var msg hole.Message
 		if _, err := packet.Read(&msg); err != nil {
 			c.xl.Errorf("Failed to parse hole message: %v", err)
 			continue
@@ -169,9 +169,9 @@ func (c *Client) handleServerMessages() {
 	}
 }
 
-func (c *Client) handlePunchReady(msg *hole.HoleMessage) {
+func (c *Client) handlePunchReady(msg *hole.Message) {
 	c.xl.Infof("Processing punch ready message from %s", msg.From)
-	
+
 	var payload hole.PunchPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		c.xl.Errorf("Failed to parse punch ready payload: %v", err)
@@ -179,7 +179,7 @@ func (c *Client) handlePunchReady(msg *hole.HoleMessage) {
 	}
 
 	c.xl.Infof("Attempting to connect to addresses: Public=%s, Private=%s", payload.PublicAddr, payload.PrivateAddr)
-	
+
 	// 尝试连接对方的公网和内网地址
 	addresses := []string{payload.PublicAddr, payload.PrivateAddr}
 	var conn net.Conn
@@ -225,22 +225,22 @@ func (c *Client) handlePunchReady(msg *hole.HoleMessage) {
 	c.startPeerMessageHandler(msg.From, conn)
 
 	// 发送连接确认消息
-	confirmMsg := &hole.HoleMessage{
+	confirmMsg := &hole.Message{
 		Type: hole.TypeConnect,
 		From: c.clientID,
 		To:   msg.From,
 	}
 	packet, _ := hole.CreateHolePacket(confirmMsg)
-	if _, err := packet_io.WritePacket(c.serverConn, packet); err != nil {
+	if err := protocol.NewPacketIO(nil, c.serverConn).WritePacket(packet); err != nil {
 		c.xl.Errorf("Failed to send connect confirmation: %v", err)
 		return
 	}
 	c.xl.Infof("Connection confirmation sent to %s", msg.From)
 }
 
-func (c *Client) handleConnect(msg *hole.HoleMessage) {
+func (c *Client) handleConnect(msg *hole.Message) {
 	c.xl.Infof("Received connect message from %s", msg.From)
-	
+
 	// 如果已经建立了连接，不需要再处理
 	if _, exists := c.peers.Load(msg.From); exists {
 		c.xl.Infof("Connection with %s already exists", msg.From)
@@ -373,7 +373,7 @@ func (c *Client) startPeerMessageHandler(peerID string, conn net.Conn) {
 func (c *Client) register() error {
 	// 注册客户端信息
 	c.xl.Infof("Registering client (ID: %s, Name: %s)...", c.clientID, c.name)
-	msg := &hole.HoleMessage{
+	msg := &hole.Message{
 		Type: hole.TypeRegister,
 		From: c.clientID,
 		Payload: []byte(`{
@@ -382,7 +382,7 @@ func (c *Client) register() error {
 		}`),
 	}
 	packet, _ := hole.CreateHolePacket(msg)
-	if _, err := packet_io.WritePacket(c.serverConn, packet); err != nil {
+	if err := protocol.NewPacketIO(nil, c.serverConn).WritePacket(packet); err != nil {
 		c.xl.Errorf("Failed to register with server: %v", err)
 		return fmt.Errorf("register to server error: %v", err)
 	}

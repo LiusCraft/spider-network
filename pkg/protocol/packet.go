@@ -1,33 +1,61 @@
 package protocol
 
-type Packet interface {
-	/* Read write to target packet
-	example:
-		bytesPacket to stringPacket(target packet)
-		src := &bytesPacket{}
-	    src.Write([]byte("hello world"))
-		targetPacket := &stringPacket{}
-		src.Read(targetPacket)
-		result := ""
-		targetPacket.Read(result)
-		fmt.Println(result) => "hello world"
-	*/
-	Read(p interface{}) (n int, err error)
-	/* Write to the packet
-	example:
-		bytePacket := &bytePacket{}
-	    bytePacket.Write([]byte("hello world")) // The internal implementation deals with data of type []byte
-		stringPacket := &stringPacket{}
-	    stringPacket.Write("hello world") // The internal implementation deals with data of type string
-	*/
-	Write(p interface{}) (n int, err error)
-	// ToPacket Writes bytes to change the current packet content
-	ToPacket(p []byte) (n int, err error)
-	// Bytes get the packet to bytes
-	Bytes() []byte
-	// PacketSize get the packet size
-	PacketSize() int
-	// PacketType default is BytesPacket, also zero
-	PacketType() PacketType
-	Clear()
+import (
+	"encoding/binary"
+)
+
+// PacketHeader 数据包头部
+type PacketHeader struct {
+	Type   PacketType // 1字节 协议类型
+	Length uint32     // 4字节 数据长度
+}
+
+const (
+	HeaderSize    = 5                // 1 + 4 字节
+	MaxPacketSize = 1024 * 1024 * 10 // 10MB
+)
+
+// EncodeHeader 编码包头
+func EncodeHeader(typ PacketType, length uint32) []byte {
+	buf := make([]byte, HeaderSize)
+	buf[0] = byte(typ)
+	binary.BigEndian.PutUint32(buf[1:], length)
+	return buf
+}
+
+// DecodeHeader 解码包头
+func DecodeHeader(data []byte) (PacketHeader, error) {
+	if len(data) < HeaderSize {
+		return PacketHeader{}, ErrInvalidPacket
+	}
+
+	length := binary.BigEndian.Uint32(data[1:HeaderSize])
+	if length > MaxPacketSize {
+		return PacketHeader{}, ErrPacketTooLarge
+	}
+
+	return PacketHeader{
+		Type:   PacketType(data[0]),
+		Length: length,
+	}, nil
+}
+
+// NewPacket 创建指定类型的数据包
+func NewPacket(typ PacketType) (Packet, error) {
+	creator, ok := GetCreator(typ)
+	if !ok {
+		return nil, ErrUnsupportedType
+	}
+	return creator.NewPacket(), nil
+}
+
+// ValidatePacket 验证数据包的有效性
+func ValidatePacket(packet Packet) error {
+	if packet == nil {
+		return ErrEmptyPacket
+	}
+	if packet.PacketSize() > MaxPacketSize {
+		return ErrPacketTooLarge
+	}
+	return nil
 }

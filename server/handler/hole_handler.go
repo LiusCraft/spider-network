@@ -19,7 +19,6 @@ import (
 	"github.com/liuscraft/spider-network/pkg/config"
 	"github.com/liuscraft/spider-network/pkg/protocol"
 	"github.com/liuscraft/spider-network/pkg/protocol/hole"
-	"github.com/liuscraft/spider-network/pkg/protocol/packet_io"
 	"github.com/liuscraft/spider-network/pkg/xlog"
 )
 
@@ -67,6 +66,9 @@ func (h *HoleHandler) Start() error {
 func (h *HoleHandler) acceptSpiderConn(xl xlog.Logger, conn net.Conn) {
 	xl.Infof("spider-hole service accept connection from %s", conn.RemoteAddr())
 	xl = xlog.WithLogId(xl, fmt.Sprintf("spider-hole-conn[%s]", conn.RemoteAddr().String()))
+
+	packetIO := protocol.NewPacketIO(conn, conn)
+
 	defer func() {
 		conn.Close()
 		// 清理客户端信息
@@ -80,7 +82,7 @@ func (h *HoleHandler) acceptSpiderConn(xl xlog.Logger, conn net.Conn) {
 	}()
 
 	for {
-		receivePacket, err := packet_io.ReceivePacket(conn)
+		packet, err := packetIO.ReadPacket()
 		if err != nil {
 			if err == io.EOF {
 				xl.Warnf("spider-hole-conn leave connection")
@@ -90,13 +92,8 @@ func (h *HoleHandler) acceptSpiderConn(xl xlog.Logger, conn net.Conn) {
 			return
 		}
 
-		if receivePacket.PacketType() != protocol.JsonType {
-			xl.Warnf("invalid packet type: %v", receivePacket.PacketType())
-			continue
-		}
-
-		var msg hole.HoleMessage
-		if _, err := receivePacket.Read(&msg); err != nil {
+		var msg hole.Message
+		if _, err := packet.Read(&msg); err != nil {
 			xl.Errorf("parse hole message error: %v", err)
 			continue
 		}
@@ -114,7 +111,7 @@ func (h *HoleHandler) acceptSpiderConn(xl xlog.Logger, conn net.Conn) {
 	}
 }
 
-func (h *HoleHandler) handleRegister(xl xlog.Logger, conn net.Conn, msg *hole.HoleMessage) {
+func (h *HoleHandler) handleRegister(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
 	var payload hole.RegisterPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		xl.Errorf("parse register payload error: %v", err)
@@ -131,16 +128,23 @@ func (h *HoleHandler) handleRegister(xl xlog.Logger, conn net.Conn, msg *hole.Ho
 	xl.Infof("client registered: %+v", info)
 
 	// 发送注册成功响应
-	response := &hole.HoleMessage{
+	response := &hole.Message{
 		Type: hole.TypeRegister,
 		From: "server",
 		To:   payload.ClientID,
 	}
-	packet, _ := hole.CreateHolePacket(response)
-	packet_io.WritePacket(conn, packet)
+	packet, err := hole.CreateHolePacket(response)
+	if err != nil {
+		xl.Errorf("create response packet error: %v", err)
+		return
+	}
+
+	if err := protocol.NewPacketIO(nil, conn).WritePacket(packet); err != nil {
+		xl.Errorf("write response error: %v", err)
+	}
 }
 
-func (h *HoleHandler) handlePunch(xl xlog.Logger, conn net.Conn, msg *hole.HoleMessage) {
+func (h *HoleHandler) handlePunch(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
 	var payload hole.PunchPayload
 	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 		xl.Errorf("parse punch payload error: %v", err)
@@ -156,7 +160,7 @@ func (h *HoleHandler) handlePunch(xl xlog.Logger, conn net.Conn, msg *hole.HoleM
 	target := targetValue.(*clientInfo)
 
 	// 向目标客户端发送打洞消息
-	punchMsg := &hole.HoleMessage{
+	punchMsg := &hole.Message{
 		Type: hole.TypePunchReady,
 		From: msg.From,
 		To:   msg.To,
@@ -166,10 +170,12 @@ func (h *HoleHandler) handlePunch(xl xlog.Logger, conn net.Conn, msg *hole.HoleM
 		}`),
 	}
 	packet, _ := hole.CreateHolePacket(punchMsg)
-	packet_io.WritePacket(target.conn, packet)
+	if err := protocol.NewPacketIO(nil, target.conn).WritePacket(packet); err != nil {
+		xl.Errorf("write punch message error: %v", err)
+	}
 }
 
-func (h *HoleHandler) handleConnect(xl xlog.Logger, conn net.Conn, msg *hole.HoleMessage) {
+func (h *HoleHandler) handleConnect(xl xlog.Logger, conn net.Conn, msg *hole.Message) {
 	// 查找目标客户端
 	targetValue, ok := h.clients.Load(msg.To)
 	if !ok {
@@ -180,7 +186,9 @@ func (h *HoleHandler) handleConnect(xl xlog.Logger, conn net.Conn, msg *hole.Hol
 
 	// 转发连接请求
 	packet, _ := hole.CreateHolePacket(msg)
-	packet_io.WritePacket(target.conn, packet)
+	if err := protocol.NewPacketIO(nil, target.conn).WritePacket(packet); err != nil {
+		xl.Errorf("write connect message error: %v", err)
+	}
 }
 
 func (h *HoleHandler) Stop() error {

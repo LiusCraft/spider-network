@@ -9,7 +9,7 @@ func main() {
 	xl := xlog.New()
 	xl.Info("Starting spider client...")
 
-	cli := client.NewClient("test-client-1", "Test Client 1")
+	cli := client.NewClient("test-client-2", "Test Client 2")
 	if err := cli.Connect("127.0.0.1:19730"); err != nil {
 		xl.Errorf("Failed to connect to server: %v", err)
 		return

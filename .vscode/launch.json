@@ -8,6 +8,12 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/spiderhole",
             "cwd": "${workspaceFolder}/conf/",
+        },
+        {
+            "name": "Spider-client",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/spider",
         }
     ]
 }

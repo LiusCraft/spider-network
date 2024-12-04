@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liuscraft/spider-network/pkg/protocol"
 	"github.com/liuscraft/spider-network/pkg/protocol/hole"
-	"github.com/liuscraft/spider-network/pkg/protocol/packet_io"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,10 +47,10 @@ func (s *mockServer) handleClient(t *testing.T, conn net.Conn) {
 	defer conn.Close()
 
 	// 等待注册消息
-	packet, err := packet_io.ReceivePacket(conn)
+	packet, err := protocol.NewPacketIO(conn, nil).ReadPacket()
 	require.NoError(t, err)
 
-	var msg hole.HoleMessage
+	var msg hole.Message
 	_, err = packet.Read(&msg)
 	require.NoError(t, err)
 	require.Equal(t, hole.TypeRegister, msg.Type)
@@ -66,19 +66,20 @@ func (s *mockServer) handleClient(t *testing.T, conn net.Conn) {
 	s.clients[payload.ClientID] = conn
 
 	// 发送注册确认
-	response := &hole.HoleMessage{
+	response := &hole.Message{
 		Type: hole.TypeRegister,
 		From: "server",
 		To:   payload.ClientID,
 	}
 	packet, err = hole.CreateHolePacket(response)
 	require.NoError(t, err)
-	_, err = packet_io.WritePacket(conn, packet)
+
+	err = protocol.NewPacketIO(nil, conn).WritePacket(packet)
 	require.NoError(t, err)
 
 	// 处理后续消息
 	for {
-		packet, err := packet_io.ReceivePacket(conn)
+		packet, err := protocol.NewPacketIO(conn, nil).ReadPacket()
 		if err != nil {
 			return
 		}
@@ -94,14 +95,15 @@ func (s *mockServer) handleClient(t *testing.T, conn net.Conn) {
 				continue
 			}
 
-			readyMsg := &hole.HoleMessage{
+			readyMsg := &hole.Message{
 				Type:    hole.TypePunchReady,
 				From:    msg.From,
 				To:      msg.To,
 				Payload: msg.Payload,
 			}
 			packet, _ = hole.CreateHolePacket(readyMsg)
-			packet_io.WritePacket(targetConn, packet)
+			err = protocol.NewPacketIO(nil, targetConn).WritePacket(packet)
+			require.NoError(t, err)
 
 		case hole.TypeConnect:
 			// 转发连接确认消息
@@ -110,7 +112,8 @@ func (s *mockServer) handleClient(t *testing.T, conn net.Conn) {
 				continue
 			}
 			packet, _ = hole.CreateHolePacket(&msg)
-			packet_io.WritePacket(targetConn, packet)
+			err = protocol.NewPacketIO(nil, targetConn).WritePacket(packet)
+			require.NoError(t, err)
 		}
 	}
 }
