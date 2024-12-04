@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/liuscraft/spider-network/pkg/utils"
 )
@@ -13,6 +15,7 @@ import (
 var (
 	defaultLog    = log.New(os.Stdout, "", log.LstdFlags)
 	defaultLogger = New()
+	projectRoot   = findProjectRoot()
 )
 
 // xlog is a simple logger.
@@ -42,6 +45,28 @@ type Logger interface {
 
 func genLogId() string {
 	return utils.RandString(15)
+}
+
+// findProjectRoot 获取项目根目录
+func findProjectRoot() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	// 获取 pkg/xlog/xlog.go 的父目录的父目录
+	return filepath.Dir(filepath.Dir(filepath.Dir(file)))
+}
+
+// getRelativePath 获取源文件的相对路径
+func getRelativePath(file string) string {
+	if projectRoot == "" {
+		return file
+	}
+	rel, err := filepath.Rel(projectRoot, file)
+	if err != nil {
+		return file
+	}
+	return rel
 }
 
 type logger struct {
@@ -88,11 +113,20 @@ func (l *logger) SetOutput(ws ...io.Writer) {
 }
 
 func (l *logger) send(level Level, v ...interface{}) {
+	// 获取调用者信息
+	_, file, line, ok := runtime.Caller(2)
+	var location string
+	if ok {
+		location = fmt.Sprintf("%s:%d", getRelativePath(file), line)
+	} else {
+		location = "unknown:0"
+	}
+
 	switch level {
 	case LevelFatal:
-		l.std.Fatalf("%s [%s] %s", l.logId, level.String(), fmt.Sprint(v...))
+		l.std.Fatalf("%s [%s] {%s} %s", l.logId, level.String(), location, fmt.Sprint(v...))
 	default:
-		l.std.Printf("%s [%s] %s", l.logId, level.String(), fmt.Sprint(v...))
+		l.std.Printf("%s [%s] {%s} %s", l.logId, level.String(), location, fmt.Sprint(v...))
 	}
 }
 

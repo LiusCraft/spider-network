@@ -8,27 +8,21 @@ const (
 	LevelWarn
 	LevelError
 	LevelFatal
-
-	levelDebugStr = "DEBUG"
-	levelInfoStr  = "INFO"
-	levelWarnStr  = "WARN"
-	levelErrorStr = "ERROR"
-	levelFatalStr = "FATAL"
 )
 
 func (l Level) String() string {
 	switch l {
 	case LevelDebug:
-		return levelDebugStr
+		return "DEBUG"
 	case LevelInfo:
-		return levelInfoStr
+		return "INFO"
 	case LevelWarn:
-		return levelWarnStr
+		return "WARN"
 	case LevelError:
-		return levelErrorStr
+		return "ERROR"
 	case LevelFatal:
-		return levelFatalStr
+		return "FATAL"
 	default:
-		return "unknown"
+		return "UNKNOWN"
 	}
 }
